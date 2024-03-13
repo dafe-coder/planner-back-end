@@ -1,7 +1,76 @@
-import { Controller } from '@nestjs/common';
-import { AuthService } from './auth.service';
+import {
+	Body,
+	Controller,
+	Get,
+	HttpCode,
+	Post,
+	Req,
+	Res,
+	UnauthorizedException,
+	UsePipes,
+	ValidationPipe,
+} from '@nestjs/common'
+import { AuthService } from './auth.service'
+import { AuthDto } from './dto/auth.dto'
+import { Response, Request } from 'express'
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+	constructor(private readonly authService: AuthService) {}
+
+	@UsePipes(new ValidationPipe())
+	@HttpCode(200)
+	@Post('login')
+	async login(
+		@Body() data: AuthDto,
+		@Res({ passthrough: true }) res: Response,
+	) {
+		const { refreshToken, ...response } = await this.authService.login(data)
+		this.authService.addRefreshTokenToResponse(res, refreshToken)
+
+		return response
+	}
+
+	@UsePipes(new ValidationPipe())
+	@HttpCode(200)
+	@Post('register')
+	async register(
+		@Body() data: AuthDto,
+		@Res({ passthrough: true }) res: Response,
+	) {
+		const { refreshToken, ...response } = await this.authService.register(data)
+		this.authService.addRefreshTokenToResponse(res, refreshToken)
+
+		return response
+	}
+
+	@HttpCode(200)
+	@Get('access-token')
+	async getNewTokens(
+		@Req() req: Request,
+		@Res({ passthrough: true }) res: Response,
+	) {
+		const refreshTokenFromCookies =
+			req.cookies[this.authService.REFRESH_TOKEN_NAME]
+
+		if (!refreshTokenFromCookies) {
+			this.authService.removeRefreshTokenToResponse(res)
+			throw new UnauthorizedException('Refresh token not passed')
+		}
+
+		const { refreshToken, ...response } = await this.authService.getNewTokens(
+			refreshTokenFromCookies,
+		)
+
+		this.authService.addRefreshTokenToResponse(res, refreshToken)
+
+		return response
+	}
+
+	@HttpCode(200)
+	@Post('/logout')
+	async logout(@Res({ passthrough: true }) res: Response) {
+		this.authService.removeRefreshTokenToResponse(res)
+		return true
+	}
 }
