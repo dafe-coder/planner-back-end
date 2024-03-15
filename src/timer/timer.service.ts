@@ -1,26 +1,93 @@
-import { Injectable } from '@nestjs/common';
-import { CreateTimerDto } from './dto/create-timer.dto';
-import { UpdateTimerDto } from './dto/update-timer.dto';
+import { Injectable, NotFoundException } from '@nestjs/common'
+import { PrismaService } from 'src/prisma.service'
+import { TimerRoundDto } from './dto/timer-round.dto'
 
 @Injectable()
 export class TimerService {
-  create(createTimerDto: CreateTimerDto) {
-    return 'This action adds a new timer';
-  }
+	constructor(private prisma: PrismaService) {}
 
-  findAll() {
-    return `This action returns all timer`;
-  }
+	async getTodaySession(userId: string) {
+		const today = new Date().toISOString().split('T')[0]
 
-  findOne(id: number) {
-    return `This action returns a #${id} timer`;
-  }
+		return await this.prisma.pomodoroSession.findFirst({
+			where: {
+				createdAt: {
+					gte: new Date(today),
+				},
+				userId,
+			},
+			include: {
+				rounds: {
+					orderBy: {
+						id: 'desc',
+					},
+				},
+			},
+		})
+	}
 
-  update(id: number, updateTimerDto: UpdateTimerDto) {
-    return `This action updates a #${id} timer`;
-  }
+	async create(userId: string) {
+		const todaySession = await this.getTodaySession(userId)
 
-  remove(id: number) {
-    return `This action removes a #${id} timer`;
-  }
+		if (todaySession) return todaySession
+
+		const user = await this.prisma.user.findUnique({
+			where: {
+				id: userId,
+			},
+			select: { intervalsCount: true },
+		})
+
+		if (!user) throw new NotFoundException('User not found')
+
+		return await this.prisma.pomodoroSession.create({
+			data: {
+				rounds: {
+					createMany: {
+						data: Array.from({ length: user.intervalsCount }, () => ({
+							totalSeconds: 0,
+						})),
+					},
+				},
+				user: {
+					connect: {
+						id: userId,
+					},
+				},
+			},
+			include: {
+				rounds: true,
+			},
+		})
+	}
+
+	async updateRound(id: string, dto: Partial<TimerRoundDto>) {
+		return await this.prisma.pomodoroRound.update({
+			where: {
+				id,
+			},
+			data: dto,
+		})
+	}
+
+	async update(id: string, dto: Partial<TimerRoundDto>) {
+		return await this.prisma.pomodoroSession.update({
+			where: {
+				id,
+			},
+			data: dto,
+		})
+	}
+
+	async delete(id: string) {
+		const pomodoroSession = await this.prisma.pomodoroSession.findUnique({
+			where: { id },
+		})
+		if (!pomodoroSession) {
+			throw new NotFoundException(
+				'Not found pomodoroSession with this id: ' + id,
+			)
+		}
+		return await this.prisma.pomodoroSession.delete({ where: { id } })
+	}
 }
