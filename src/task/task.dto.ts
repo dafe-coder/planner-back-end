@@ -4,6 +4,7 @@ import { Transform } from 'class-transformer'
 
 export class TaskDto {
 	@IsString()
+	@IsOptional()
 	name: string
 
 	@IsBoolean()
